@@ -5,6 +5,8 @@ import warnings
 from sys import maxsize
 import json
 
+import gamelib.navigation
+
 
 """
 Most of the algo code you write will be in this file unless you create new
@@ -56,9 +58,9 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state = gamelib.GameState(self.config, turn_state)
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
-
-        self.starter_strategy(game_state)
-
+        game_map = gamelib.GameMap(self.config)
+        self.starter_strategy(game_state, turn_state, game_map)
+        #gamelib.debug_write(turn_state)
         game_state.submit_turn()
 
 
@@ -67,7 +69,7 @@ class AlgoStrategy(gamelib.AlgoCore):
     strategy and can safely be replaced for your custom algo.
     """
 
-    def starter_strategy(self, game_state):
+    def starter_strategy(self, game_state, turn_string, game_map):
         """
         For defense we will use a spread out layout and some interceptors early on.
         We will place turrets near locations the opponent managed to score on.
@@ -103,7 +105,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         # If the turn is less than 5, stall with interceptors and wait to see enemy's base
         #if game_state.turn_number < 5:
             #self.stall_with_interceptors(game_state)
-        #else:
+        else:
             # Now let's analyze the enemy base to see where their defenses are concentrated.
             # If they have many units in the front we can build a line for our demolishers to attack them at long range.
             # if self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 10:
@@ -120,6 +122,11 @@ class AlgoStrategy(gamelib.AlgoCore):
                 # Lastly, if we have spare SP, let's build some supports
                 support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
                 game_state.attempt_spawn(SUPPORT, support_locations)
+
+        
+        support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
+        game_state.attempt_spawn(SUPPORT, support_locations)
+              
     
     def get_enemy_defenses_in_range(self, game_state, locations):
         """
@@ -145,11 +152,36 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         return enemy_defenses
 
+    # def get_units_array(self, turn_string):
+    #     state = json.loads(turn_string)
+    #     p2_units = state["p2Units"]
+    #     #Flattening the list to get all units as a single list
+    #     flat_p2_units = [item for sublist in p2_units for item in sublist]
+    #     gamelib.debug_write("Units array", flat_p2_units)
+    #     return flat_p2_units
+    
     def get_units_array(self, turn_string):
         state = json.loads(turn_string)
         units = state["p2Units"]
-        return units
- 
+        unit_information = self.config["unitInformation"]  # Access unit configuration
+        units_with_type = []
+        for i, unit_list in enumerate(units):  # Each i corresponds to a specific unit type
+            unit_type = unit_information[i]["shorthand"]
+            for unit in unit_list:
+                x, y, health, unit_id = unit
+                #units_with_type.append([x, y, health, unit_id, unit_type])
+                if unit_type == 'FF':
+                    units_with_type.append([x, y, health, unit_id, "WALL"])
+                    #gamelib.debug_write("Unit w/ Type", [x, y, health, unit_id, "WALL"])
+                elif unit_type == 'DF':
+                    units_with_type.append([x, y, health, unit_id, "TURRET"])
+                    #gamelib.debug_write("Unit w/ Type", [x, y, health, unit_id, "TURRET"])
+                elif unit_type == 'EF':
+                    units_with_type.append([x, y, health, unit_id, "SUPPORT"])
+                    #gamelib.debug_write("Unit w/ Type", [x, y, health, unit_id, "SUPPORT"])
+                
+        return units_with_type
+    
     def stationary_units_in_range(self, game_state, units, locations):
         """
         Gives an array of stationary units within a specific range of locations.
@@ -164,16 +196,12 @@ class AlgoStrategy(gamelib.AlgoCore):
         List of stationary units within the given range of locations.
         """
         stationary_units = []
-        location_set = set(map(tuple, locations))  
-
+        
         for unit in units:
-            unit_location = (unit[0], unit[1])
-            if unit_location in location_set:
-                unit_type = game_state.contains_stationary_unit([unit[0], unit[1]])
-                if unit_type:
-                    unit.append(unit_type)  
-                    stationary_units.append(unit)
-
+            if [unit[0], unit[1]] in locations:
+                stationary_units.append(unit)
+                #unit_location =   # Get the location as a list [x, y]
+                #gamelib.debug_write("Units desc", unit_type)
         return stationary_units
 
     def determine_scout_target(self, game_state, scout_location):
@@ -189,7 +217,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         """
         scout = gamelib.GameUnit(SCOUT, game_state.config, player_index=0, health=12, x=scout_location[0], y=scout_location[1])
 
-        target = self.get_target(scout)
+        target = game_state.get_target(scout)
         
         if target:
             print(f"Scout at {scout_location} will attack: {target.unit_type} at {target.x, target.y}")
@@ -199,51 +227,86 @@ class AlgoStrategy(gamelib.AlgoCore):
             return None, None
 
 
-    def scouts_survived(self, game_state, game_map, num_of_units, turn_state):
+    def scouts_survived(self, game_state, game_map, num_of_units, turn_string, unit_spawn_location_options):
         scout_range = 4.5
         scout_health = 12
         scout_damage = 2
-        unit_spawn_location_options = [[13, 0], [14, 0]]
         start_location = self.least_damage_spawn_location(game_state, unit_spawn_location_options)
+        gamelib.debug_write("Start Location", start_location)
         paths = game_state.find_path_to_edge(start_location, None)
+        #gamelib.debug_write("Paths: ", paths)
         total_scout_health = num_of_units * scout_health
-        destroyed_defenses = set()
+        destroyed_defenses = []
+        all_units = self.get_units_array(turn_string)
+        #gamelib.debug_write("All units", all_units)
+        #gamelib.debug_write("All units", all_units)
         for path in paths:
             #how much damage a scout does on the defenses and updates the health of each defense in the list
             range_path = game_map.get_locations_in_range(path, scout_range)
-            all_units = self.get_units_array(turn_state)
+            #gamelib.debug_write("Range Paths: ", range_path)
             stationary_units = self.stationary_units_in_range(game_state, all_units, range_path)
+            gamelib.debug_write("Stationary in Range: ", stationary_units)
             target_unit_type, target_location = self.determine_scout_target(game_state, path)
             for defense in stationary_units:
                 unit_type = defense[-1]
                 location = [defense[0], defense[1]]
-                if (unit_type, location) in destroyed_defenses:
+                if [unit_type, location] in destroyed_defenses:
                     continue
                 if target_unit_type == unit_type and target_location == location:
                     defense[2] = defense[2] - (num_of_units * scout_damage)
                     if defense[2] <= 0:
-                        destroyed_defenses.add((unit_type, location))
+                        destroyed_defenses.append([unit_type, location])
             #how much damage the defenses do to our scouts before they reach the end
-            attackers = game_state.get_attackers(path, 1)
+            attackers = game_state.get_attackers(path, 0)
+            #grouped_attackers = self.group_attackers(attackers)
+            gamelib.debug_write("Attackers", attackers)
             for attacker in attackers:
-                if attacker.unit_type == 'TURRET':
-                    total_scout_health = total_scout_health - 6
-                elif attacker.unit_type == 'WALL':
-                    total_scout_health = total_scout_health - 1
+                # Extract unit type from the string
+                #unit_type = 
+                if attacker.unit_type == 'DF':
+                    total_scout_health -= 6
+                #gamelib.debug_write("Attacker",type(attacker))
         if total_scout_health < 6:
             scouts_survived = 0
         else:
-            scouts_survived = max(total_scout_health // scout_health, 0)    
+            gamelib.debug_write("Total scout health", total_scout_health)
+            scouts_survived = max(total_scout_health // scout_health, 0) 
+        gamelib.debug_write("Scouts survived", scouts_survived)  
         return scouts_survived
+    
+    def optimal_scout_attack(self, game_state, turn_string):
+        
+        unit_spawn_location_options = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
+                        [5, 8], [6, 7], [7, 6], [8, 5], [9, 4], [10, 3], 
+                        [11, 2], [12, 1], [13, 0], [27, 13], [26, 12], [25, 11], 
+                        [24, 10], [23, 9], [22, 8], [21, 7], [20, 6], [19, 5], 
+                        [18, 4], [17, 3], [16, 2], [15, 1], [14, 0]]
 
+        
+        #my_edges = [[13,0], [14,0]]
+            
+        #unit_spawn_location_options = self.filter_blocked_locations(my_edges, game_state)
+        #gamelib.debug_write(unit_spawn_location_options)
+        num_of_units = int(game_state.get_resource(MP))
+
+        scouts_survived, location = self.scouts_survived(game_state, game_state.game_map, num_of_units, turn_string, unit_spawn_location_options)
+
+        gamelib.debug_write("Scouts survived", scouts_survived)
+        return location
+
+    def group_attackers(attackers, group_size=5):
+        grouped_attackers = []
+        for i in range(0, len(attackers), group_size):
+            group = attackers[i:i + group_size]
+            processed_group = [attacker.split(", ") for attacker in group]
+            grouped_attackers.append(processed_group)
+        return grouped_attackers
 
     def corner_attack(self, game_state):
         scout_spawn_location_options = [[13, 0], [14, 0]]
         best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
-        game_state.attempt_spawn(SCOUT, best_location, 10)
+        game_state.attempt_spawn(SCOUT, best_location, 1000)
 
-<<<<<<< HEAD
-=======
     #need to increase length of priority_queue
     global priority_queue
     priority_queue = [[[5, 13], 'TURRET'], [[5, 13], 'UPGRADE'], [[14, 13], 'TURRET'], [[14, 13], 'UPGRADE'],
@@ -254,7 +317,6 @@ class AlgoStrategy(gamelib.AlgoCore):
                         [[2, 13], 'WALL'], [[25, 13], 'WALL'], [[26, 13], 'WALL'], [[27, 13], 'WALL'],
                         [[0, 13], 'UPGRADE'], [[13, 13], 'UPGRADE'], [[15, 13], 'UPGRADE'],
                         [[27, 13], 'UPGRADE']]
->>>>>>> 11f4802db7594db72c0eea64a0d5c5abb2a582c5
 
     def build_defences(self, game_state):
         """
@@ -264,14 +326,13 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
         # More community tools available at: https://terminal.c1games.com/rules#Download
 
-
         for i in priority_queue:
             if i[1] == "WALL":
                 game_state.attempt_spawn(WALL, i[0])
             elif i[1] == "TURRET":
                 game_state.attempt_spawn(TURRET, i[0])
             elif i[1] == "SUPPORT":
-                game_state.attempt_spwan(SUPPORT, i[0])
+                game_state.attempt_spawn(SUPPORT, i[0])
             elif i[1] == "UPGRADE":
                 game_state.attempt_upgrade(i[0])
         
@@ -394,7 +455,8 @@ class AlgoStrategy(gamelib.AlgoCore):
                 gamelib.debug_write("Got scored on at: {}".format(location))
                 self.scored_on_locations.append(location)
                 gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
-
+    
+    
 
 if __name__ == "__main__":
     algo = AlgoStrategy()
