@@ -43,6 +43,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         SP = 0
         # This is a good place to do initial setup
         self.scored_on_locations = []
+        self.enemy_defenses_stats = []
 
     def on_turn(self, turn_state):
         """
@@ -98,11 +99,128 @@ class AlgoStrategy(gamelib.AlgoCore):
                 # Lastly, if we have spare SP, let's build some supports
                 support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
                 game_state.attempt_spawn(SUPPORT, support_locations)
+    
+    def get_enemy_defenses_in_range(self, game_state, locations):
+        """
+        Returns the locations of enemy support, turrets, and walls within the given locations.
+
+        Args:
+            game_state: The current state of the game.
+            locations: A list of locations to check for enemy defenses.
+
+        Returns:
+            A tuple containing lists of turret locations, wall locations, and support locations within the specified locations.
+        """
+        enemy_defenses = []
+    
+        for location in locations:
+            stationary_unit = game_state.contains_stationary_unit(location)
+            if stationary_unit == TURRET:
+                enemy_defenses.append([TURRET, location])
+            elif stationary_unit == WALL:
+                enemy_defenses.append([WALL, location])
+            elif stationary_unit == SUPPORT:
+                enemy_defenses.append([SUPPORT, location])
+
+        return enemy_defenses
+
+    def get_units_array(self, turn_string):
+        state = json.loads(turn_string)
+        units = state["p2Units"]
+        return units
+ 
+    def stationary_units_in_range(self, game_state, units, locations):
+        """
+        Gives an array of stationary units within a specific range of locations.
+        Each element of the array is in the format [x, y, health, id, type].
+
+        Args: 
+        game_state: A GameState object representing the gamestate we want to traverse.
+        units: Array of units obtained from the turn string.
+        locations: List of locations to filter the stationary units by.
+
+        Returns:
+        List of stationary units within the given range of locations.
+        """
+        stationary_units = []
+        location_set = set(map(tuple, locations))  
+
+        for unit in units:
+            unit_location = (unit[0], unit[1])
+            if unit_location in location_set:
+                unit_type = game_state.contains_stationary_unit([unit[0], unit[1]])
+                if unit_type:
+                    unit.append(unit_type)  
+                    stationary_units.append(unit)
+
+        return stationary_units
+
+    def determine_scout_target(self, game_state, scout_location):
+        """
+        Determines what a Scout will attack out of turrets, walls, and supports at a given location.
+
+        Args:
+            game_state: The current state of the game.
+            scout_location: The current location of the Scout (e.g., [13, 0]).
+
+        Returns:
+            The target unit that the Scout will attack.
+        """
+        scout = gamelib.GameUnit(SCOUT, game_state.config, player_index=0, health=12, x=scout_location[0], y=scout_location[1])
+
+        target = self.get_target(scout)
+        
+        if target:
+            print(f"Scout at {scout_location} will attack: {target.unit_type} at {target.x, target.y}")
+            return target.unit_type, (target.x, target.y)
+        else:
+            print(f"No target found for Scout at {scout_location}")
+            return None, None
+
+
+    def scouts_survived(self, game_state, game_map, num_of_units, turn_state):
+        scout_range = 4.5
+        scout_health = 12
+        scout_damage = 2
+        unit_spawn_location_options = [[13, 0], [14, 0]]
+        start_location = self.least_damage_spawn_location(game_state, unit_spawn_location_options)
+        paths = game_state.find_path_to_edge(start_location, None)
+        total_scout_health = num_of_units * scout_health
+        destroyed_defenses = set()
+        for path in paths:
+            #how much damage a scout does on the defenses and updates the health of each defense in the list
+            range_path = game_map.get_locations_in_range(path, scout_range)
+            all_units = self.get_units_array(turn_state)
+            stationary_units = self.stationary_units_in_range(game_state, all_units, range_path)
+            target_unit_type, target_location = self.determine_scout_target(game_state, path)
+            for defense in stationary_units:
+                unit_type = defense[-1]
+                location = [defense[0], defense[1]]
+                if (unit_type, location) in destroyed_defenses:
+                    continue
+                if target_unit_type == unit_type and target_location == location:
+                    defense[2] = defense[2] - (num_of_units * scout_damage)
+                    if defense[2] <= 0:
+                        destroyed_defenses.add((unit_type, location))
+            #how much damage the defenses do to our scouts before they reach the end
+            attackers = game_state.get_attackers(path, 1)
+            for attacker in attackers:
+                if attacker.unit_type == 'TURRET':
+                    total_scout_health = total_scout_health - 6
+                elif attacker.unit_type == 'WALL':
+                    total_scout_health = total_scout_health - 1
+        if total_scout_health < 6:
+            scouts_survived = 0
+        else:
+            scouts_survived = max(total_scout_health // scout_health, 0)    
+        return scouts_survived
+
 
     def corner_attack(self, game_state):
         scout_spawn_location_options = [[13, 0], [14, 0]]
         best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
         game_state.attempt_spawn(SCOUT, best_location, 10)
+
 
     def build_defences(self, game_state):
         """
