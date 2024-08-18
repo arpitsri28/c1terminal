@@ -35,7 +35,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         """
         gamelib.debug_write('Configuring your custom algo strategy...')
         self.config = config
-        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP, ATTACK_STATUS, ATTACK_EDGE
+        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP, ATTACK_STATUS, ATTACK_EDGE, START_ATTACK
         WALL = config["unitInformation"][0]["shorthand"]
         SUPPORT = config["unitInformation"][1]["shorthand"]
         TURRET = config["unitInformation"][2]["shorthand"]
@@ -45,6 +45,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         MP = 1
         SP = 0
         ATTACK_STATUS = 0
+        START_ATTACK = 0
         # This is a good place to do initial setup
         self.scored_on_locations = []
         self.enemy_defenses_stats = []
@@ -78,35 +79,41 @@ class AlgoStrategy(gamelib.AlgoCore):
         For offense we will use long range demolishers if they place stationary units near the enemy's front.
         If there are no stationary units to attack in the front, we will send Scouts to try and score quickly.
         """
-
+        #START_ATTACK = 0
         if game_state.turn_number == 1:
+            my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
             scouts_survived, def_dest_scout = self.scouts_survived(game_state, 8, turn_string, my_empty_edges)
             if scouts_survived >= 6:
-                start_attack = 2
+                START_ATTACK = 1
             else:
-                start_attack = 3
+                START_ATTACK = 2
         enemy_health = game_state.enemy_health
-        if game_state.turn_number == start_attack:
+        if game_state.turn_number == START_ATTACK:
             ATTACK_STATUS = 1
         else:
             ATTACK_STATUS = 0
         
         if ATTACK_STATUS == 0: 
             # First, place basic defenses
-            self.build_defences(game_state)
+            self.build_defences(game_state, intial_queue)
+            self.build_defences(game_state, priority_queue)
             # Now build reactive defenses based on where the enemy scored
             self.build_reactive_defense(game_state)
         elif ATTACK_STATUS == 1:
             my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
             gamelib.debug_write("Deploy edges", my_empty_edges)
             path = self.least_damage_spawn_location(game_state, my_empty_edges)
-            self.build_support(game_state, game_state.get_target_edge(path))
-            self.build_defences(game_state)
+            self.build_defences(game_state, intial_queue)
+            self.build_support(game_state, path)
+            self.build_defences(game_state, priority_queue)
             # Now build reactive defenses based on where the enemy scored
             self.build_reactive_defense(game_state)
             units_deployed = self.attack(game_state, turn_string)
+            gamelib.debug_write("Units Deployed Actual", units_deployed)
             units_survived = enemy_health - game_state.enemy_health
-            start_attack = self.freq(units_deployed, units_survived, start_attack) 
+            gamelib.debug_write("Units Survived", units_survived)
+            START_ATTACK = self.freq(units_deployed, units_survived) 
+
         
         support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
         game_state.attempt_spawn(SUPPORT, support_locations)
@@ -309,13 +316,13 @@ class AlgoStrategy(gamelib.AlgoCore):
         num_of_defenses = len(destroyed_defenses)
         return scouts_survived, num_of_defenses                              
 
-    def freq(self, units_deployed, units_survived, start_attack):
+    def freq(self, units_deployed, units_survived):
         upper_survival_threshold = 0.7
         percentage_survived = units_survived/units_deployed
         if percentage_survived >= upper_survival_threshold:
-            return start_attack + 2
+            return START_ATTACK + 2
         else:
-            return start_attack + 3
+            return START_ATTACK + 3
 
     def attack(self, game_state, turn_string):
         my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
@@ -445,32 +452,39 @@ class AlgoStrategy(gamelib.AlgoCore):
                         [[0, 13], 'UPGRADE'], [[13, 13], 'UPGRADE'], [[15, 13], 'UPGRADE'],
                         [[27, 13], 'UPGRADE']]
     
+    global bottom_left_edge, bottom_right_edge, left_top, quad_1, quad_2, quad_3, quad_4 # quad_3 refers to bottom_right
+    bottom_left_edge = {(7, 6), (0, 13), (2, 11), (6, 7), (4, 9), 
+                        (5, 8), (3, 10), (10, 3), (11, 2), (1, 12), 
+                        (8, 5), (12, 1), (9, 4), (13, 0)}
+    quad_1 = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], [5, 8], [6, 7]]
+    quad_2 = [[7, 6], [8, 5], [9, 4], [10, 3], [11, 2], [12, 1], [13, 0]]
+    quad_3 = [[20, 6], [19, 5], [18, 4], [17, 3], [16, 2], [15, 1], [14, 0]]
+    quad_4 = [[27, 13], [26, 12], [25, 11], [24, 10], [23, 9], [22, 8], [21, 7]]
+              
     
-    def build_support(self, game_state, edge, n):
-        if edge == 1: #top_left
-            support_list = [[5, 11], [8, 11], [11, 11]]
-            for i in range(n):
-                game_state.attempt_spawn(SUPPORT, support_list[i])
-        elif edge == 0: #top_right
-            support_list = [[16, 11], [19, 11], [22, 11]]
-            for i in range(n):
-                game_state.attempt_spawn(SUPPORT, support_list[i])
+    bottom_right_edge = {(15, 1), (20, 6), (24, 10), (14, 0), (27, 13), 
+                            (25, 11), (22, 8), (21, 7), (18, 4), (26, 12), 
+                            (19, 5), (17, 3), (23, 9), (16, 2)}
+    def build_support(self, game_state, spawn_location):
+        if spawn_location in quad_1:
+            game_state.attempt_spawn(SUPPORT, [spawn_location[0] + 1, spawn_location[1] - 1])
+            game_state.attempt_upgrade([spawn_location[0] + 1, spawn_location[1] - 1])
+            game_state.attempt_remove([spawn_location[0] + 1, spawn_location[1] - 1])
+        elif spawn_location in quad_2:
+            game_state.attempt_spawn(SUPPORT, [spawn_location[0] + 1, spawn_location[1]])
+            game_state.attempt_upgrade([spawn_location[0] + 1, spawn_location[1]])
+            game_state.attempt_remove([spawn_location[0] + 1, spawn_location[1]])
+        elif spawn_location in quad_3:
+            game_state.attempt_spawn(SUPPORT, [spawn_location[0] - 1, spawn_location[1]])
+            game_state.attempt_upgrade([spawn_location[0] - 1, spawn_location[1]])
+            game_state.attempt_remove([spawn_location[0] - 1, spawn_location[1]])
+        elif spawn_location in quad_4:
+            game_state.attempt_spawn(SUPPORT, [spawn_location[0] - 1, spawn_location[1] - 1])
+            game_state.attempt_upgrade([spawn_location[0] - 1, spawn_location[1] - 1])
+            game_state.attempt_remove([spawn_location[0] - 1, spawn_location[1] - 1])
 
-    def upgrade_support(self, game_state, edge, n):
-        if edge == 1: #top_left
-            support_list = [[5, 11], [8, 11], [11, 11]]
-            i = 0
-            while n > 0:
-                game_state.attempt_upgrade(support_list[i])
-                n -= 1
-                i += 1
-        elif edge == 0: #top_right
-            support_list = [[16, 11], [19, 11], [22, 11]]
-            i = 0
-            while n > 0:
-                game_state.attempt_upgrade(support_list[i])
-                n -= 1
-                i += 1
+
+
     
     global my_edges
     my_edges = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
