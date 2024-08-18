@@ -35,7 +35,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         """
         gamelib.debug_write('Configuring your custom algo strategy...')
         self.config = config
-        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP, ATTACK_STATUS
+        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP, ATTACK_STATUS, ATTACK_EDGE
         WALL = config["unitInformation"][0]["shorthand"]
         SUPPORT = config["unitInformation"][1]["shorthand"]
         TURRET = config["unitInformation"][2]["shorthand"]
@@ -44,6 +44,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         INTERCEPTOR = config["unitInformation"][5]["shorthand"]
         MP = 1
         SP = 0
+        ATTACK_STATUS = 0
         # This is a good place to do initial setup
         self.scored_on_locations = []
         self.enemy_defenses_stats = []
@@ -84,67 +85,80 @@ class AlgoStrategy(gamelib.AlgoCore):
             ATTACK_STATUS = 0
         
         if ATTACK_STATUS == 0:
-            # First, place basic defenses
-            self.build_defences(game_state)
+            # First, place intial crucial defenses
+            self.build_defences(game_state, intial_queue)
+            #Then, build priority defenses
+            self.build_defences(game_state, priority_queue)
             # Now build reactive defenses based on where the enemy scored
             self.build_reactive_defense(game_state)
         elif ATTACK_STATUS == 1:
+            #First intial crucial defenses
+            self.build_defences(game_state, intial_queue)
+
+            #Do attack flow here and get ATTACK_EDGE
+            '''
             my_edges = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
                         [5, 8], [6, 7], [7, 6], [8, 5], [9, 4], [10, 3], 
                         [11, 2], [12, 1], [13, 0], [27, 13], [26, 12], [25, 11], 
                         [24, 10], [23, 9], [22, 8], [21, 7], [20, 6], [19, 5], 
                         [18, 4], [17, 3], [16, 2], [15, 1], [14, 0]]
+            '''
             
-            my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
-            gamelib.debug_write("Deploy edges", my_empty_edges)
+            my_empty_edges = self.get_safe_edges(game_state)
+
+            gamelib.debug_write("My empty edges", my_empty_edges)
             path = self.least_damage_spawn_location(game_state, my_empty_edges)
-            self.build_support(game_state, game_state.get_target_edge(path))
-            self.build_defences(game_state)
-            # Now build reactive defenses based on where the enemy scored
-            self.build_reactive_defense(game_state)
-            
+            ATTACK_EDGE = game_state.get_target_edge(path)
             num_units = int(game_state.get_resource(MP))
             gamelib.debug_write("Scouts deployed", num_units)
             num_survived = self.scouts_survived(game_state, game_map, num_units, turn_string, my_empty_edges)
             game_state.attempt_spawn(SCOUT, path, 1000)
-            
-        
-        support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
-        game_state.attempt_spawn(SUPPORT, support_locations)
+            #Build supports for attack
+            structure_pts = game_state.get_resource(SP)
+            gamelib.debug_write("structure_pts", structure_pts)
+            if structure_pts <= 12:
+                n = 1
+            elif structure_pts > 12 and structure_pts < 18:
+                n = 2
+            else:
+                n = 3
+            self.build_support(game_state, ATTACK_EDGE, n)
+            # Next priority queue
+            self.build_defences(game_state, priority_queue)
+            #Upgrade Supports
+            self.upgrade_support(game_state, ATTACK_EDGE, n)
+            #potential_turret = self.build_scout_defense(game_state, game_map, turn_string)
+            #gamelib.debug_write("Potential Turret", potential_turret)
               
-    
-    def get_enemy_defenses_in_range(self, game_state, locations):
-        """
-        Returns the locations of enemy support, turrets, and walls within the given locations.
+    def get_safe_edges(self, game_state):
+        my_edges = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
+                        [5, 8], [6, 7], [7, 6], [8, 5], [9, 4], [10, 3], 
+                        [11, 2], [12, 1], [13, 0], [27, 13], [26, 12], [25, 11], 
+                        [24, 10], [23, 9], [22, 8], [21, 7], [20, 6], [19, 5], 
+                        [18, 4], [17, 3], [16, 2], [15, 1], [14, 0]]
+            
+        my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
+        gamelib.debug_write("Deploy edges", my_empty_edges)
 
-        Args:
-            game_state: The current state of the game.
-            locations: A list of locations to check for enemy defenses.
+        enemy_hashmap = {(27, 14), (0, 14), (1, 15), (26, 15), 
+                         (2, 16), (25, 16), (3, 17), (24, 17), 
+                         (4, 18), (23, 18), (5, 19), (22, 19), 
+                         (6, 20), (21, 20), (7, 21), (20, 21), 
+                         (8, 22), (19, 22), (9, 23), (18, 23), 
+                         (10, 24), (17, 24), (11, 25), (16, 25), 
+                         (12, 26), (15, 26), (13, 27), (14, 27)}
 
-        Returns:
-            A tuple containing lists of turret locations, wall locations, and support locations within the specified locations.
-        """
-        enemy_defenses = []
-    
-        for location in locations:
-            stationary_unit = game_state.contains_stationary_unit(location)
-            if stationary_unit == TURRET:
-                enemy_defenses.append([TURRET, location])
-            elif stationary_unit == WALL:
-                enemy_defenses.append([WALL, location])
-            elif stationary_unit == SUPPORT:
-                enemy_defenses.append([SUPPORT, location])
-
-        return enemy_defenses
-
-    # def get_units_array(self, turn_string):
-    #     state = json.loads(turn_string)
-    #     p2_units = state["p2Units"]
-    #     #Flattening the list to get all units as a single list
-    #     flat_p2_units = [item for sublist in p2_units for item in sublist]
-    #     gamelib.debug_write("Units array", flat_p2_units)
-    #     return flat_p2_units
-    
+        while my_empty_edges:
+            paths = self.least_damage_spawn_path(game_state, my_empty_edges)
+            gamelib.debug_write("Paths get safe", paths)
+            if tuple(paths[-1]) in enemy_hashmap:
+                break
+            else:
+                # Remove the start of the path with the least damage from empty edges
+                my_empty_edges.remove(paths[0])
+        
+        return my_empty_edges
+        
     def get_units_array(self, turn_string):
         state = json.loads(turn_string)
         units = state["p2Units"]
@@ -164,30 +178,8 @@ class AlgoStrategy(gamelib.AlgoCore):
                 elif unit_type == 'EF':
                      units_with_type[(x, y)] = [health, "SUPPORT"]
                     #gamelib.debug_write("Unit w/ Type", [x, y, health, unit_id, "SUPPORT"])
-        gamelib.debug_write("Units dict", units_with_type)
+        #gamelib.debug_write("Units dict", units_with_type)
         return units_with_type
-    
-    # def stationary_units_in_range(self, game_state, units, locations):
-    #     """
-    #     Gives an array of stationary units within a specific range of locations.
-    #     Each element of the array is in the format [x, y, health, id, type].
-
-    #     Args: 
-    #     game_state: A GameState object representing the gamestate we want to traverse.
-    #     units: Array of units obtained from the turn string.
-    #     locations: List of locations to filter the stationary units by.
-
-    #     Returns:
-    #     List of stationary units within the given range of locations.
-    #     """
-    #     stationary_units = set()
-        
-    #     for unit in units:
-    #         if [unit[0], unit[1]] in locations:
-    #             stationary_units.add(unit)
-    #             #unit_location =   # Get the location as a list [x, y]
-    #             #gamelib.debug_write("Units desc", unit_type)
-    #     return stationary_units
 
     def determine_scout_target(self, game_state, scout_location):
         """
@@ -216,23 +208,18 @@ class AlgoStrategy(gamelib.AlgoCore):
         scout_range = 4.5
         scout_health = 12
         scout_damage = 2
-        start_location = self.least_damage_spawn_location(game_state, unit_spawn_location_options)
-        gamelib.debug_write("Start Location", start_location)
-        paths = game_state.find_path_to_edge(start_location, None)
+        normal_turret_damage = 6
+        upgraded_turret_damage = 14
+        #start_location = self.least_damage_spawn_location(game_state, unit_spawn_location_options)
+        #gamelib.debug_write("Start Location", start_location)
+        paths = self.least_damage_spawn_path(game_state, unit_spawn_location_options)
         #gamelib.debug_write("Paths: ", paths)
         total_scout_health = num_of_units * scout_health
         destroyed_defenses = set()
         all_units = self.get_units_array(turn_string) #hashmap this
         #gamelib.debug_write("All units", all_units)
-        #gamelib.debug_write("All units", all_units)
         for path in paths:
-            #how much damage a scout does on the defenses and updates the health of each defense in the list
-            #range_path = game_map.get_locations_in_range(path, scout_range) #don't need this cuz directly target get
-            #gamelib.debug_write("Range Paths: ", range_path)
-            #stationary_units = self.stationary_units_in_range(game_state, all_units, range_path) same same
-            #gamelib.debug_write("Stationary in Range: ", stationary_units)
             scout = gamelib.GameUnit(SCOUT, self.config, player_index=0, health=scout_health, x=path[0], y=path[1])
-
             target_unit = game_state.get_target(scout)
             gamelib.debug_write("Target unit", target_unit)
             if target_unit:
@@ -251,7 +238,10 @@ class AlgoStrategy(gamelib.AlgoCore):
             for attacker in attackers:
                 gamelib.debug_write("Current Attacker", attacker)
                 if attacker.unit_type == 'DF':
-                    total_scout_health -= 6
+                    if attacker.upgrade:
+                        total_scout_health -= upgraded_turret_damage
+                    else:
+                        total_scout_health -= normal_turret_damage
                     gamelib.debug_write("Scout Health Loop", total_scout_health)
                     num_of_units = math.ceil(total_scout_health / scout_health)
         
@@ -260,50 +250,143 @@ class AlgoStrategy(gamelib.AlgoCore):
         gamelib.debug_write("Scouts survived", scouts_survived)  
         return scouts_survived
 
-
-    
-    def optimal_scout_attack(self, game_state, turn_string):
-        unit_spawn_location_options = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
-                        [5, 8], [6, 7], [7, 6], [8, 5], [9, 4], [10, 3], 
-                        [11, 2], [12, 1], [13, 0], [27, 13], [26, 12], [25, 11], 
-                        [24, 10], [23, 9], [22, 8], [21, 7], [20, 6], [19, 5], 
-                        [18, 4], [17, 3], [16, 2], [15, 1], [14, 0]]
-        #my_edges = [[13,0], [14,0]]
-            
-        #unit_spawn_location_options = self.filter_blocked_locations(my_edges, game_state)
-        #gamelib.debug_write(unit_spawn_location_options)
-        num_of_units = int(game_state.get_resource(MP))
-
-        scouts_survived, location = self.scouts_survived(game_state, game_state.game_map, num_of_units, turn_string, unit_spawn_location_options)
-
-        gamelib.debug_write("Scouts survived", scouts_survived)
-        return location
-
-    def group_attackers(attackers, group_size=5):
-        grouped_attackers = []
-        for i in range(0, len(attackers), group_size):
-            group = attackers[i:i + group_size]
-            processed_group = [attacker.split(", ") for attacker in group]
-            grouped_attackers.append(processed_group)
-        return grouped_attackers
-
     def corner_attack(self, game_state):
         scout_spawn_location_options = [[13, 0], [14, 0]]
         best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
         game_state.attempt_spawn(SCOUT, best_location, 1000)
 
+
+    def get_our_units_array(self, turn_string):
+        state = json.loads(turn_string)
+        units = state["p1Units"]
+        unit_information = self.config["unitInformation"]  # Access unit configuration
+        units_with_type = {}
+        for i, unit_list in enumerate(units):  # Each i corresponds to a specific unit type
+            unit_type = unit_information[i]["shorthand"]
+            for unit in unit_list:
+                x, y, health, unit_id = unit
+                #units_with_type.append([x, y, health, unit_id, unit_type])
+                if unit_type == 'FF':
+                    units_with_type[(x, y)] = [health, "WALL"]
+                    #gamelib.debug_write("Unit w/ Type", [x, y, health, unit_id, "WALL"])
+                elif unit_type == 'DF':
+                    units_with_type[(x, y)] = [health, "TURRET"]
+                    #gamelib.debug_write("Unit w/ Type", [x, y, health, unit_id, "TURRET"])
+                elif unit_type == 'EF':
+                     units_with_type[(x, y)] = [health, "SUPPORT"]
+                    #gamelib.debug_write("Unit w/ Type", [x, y, health, unit_id, "SUPPORT"])
+        gamelib.debug_write("Units dict", units_with_type)
+        return units_with_type
+    
+    def defense_scouts(self, game_state, game_map, num_of_units, all_units, paths):
+        scout_range = 4.5
+        scout_health = 12
+        scout_damage = 2
+        normal_turret_damage = 6
+        upgraded_turret_damage = 14
+        total_scout_health = num_of_units * scout_health
+        destroyed_defenses = set()
+        #gamelib.debug_write("All units", all_units)
+        for path in paths:
+            scout = gamelib.GameUnit(SCOUT, self.config, player_index=0, health=scout_health, x=path[0], y=path[1])
+            target_unit = game_state.get_target(scout)
+            #gamelib.debug_write("Target unit", target_unit)
+            if target_unit:
+                target = (target_unit.x, target_unit.y)
+                if target in all_units:
+                    if target in destroyed_defenses:
+                        continue
+                    unit_desc = all_units[target]
+                    unit_desc[0] -= (num_of_units * scout_damage)
+                    if unit_desc[0] <= 0:
+                        destroyed_defenses.add(target)
+            #how much damage the defenses do to our scouts before they reach the end
+            attackers = game_state.get_attackers(path, 0)
+            #grouped_attackers = self.group_attackers(attackers)
+            #gamelib.debug_write("Attackers", attackers)
+            for attacker in attackers:
+                #gamelib.debug_write("Current Attacker", attacker)
+                if attacker.unit_type == 'DF':
+                    total_scout_health -= 14
+                    #gamelib.debug_write("Scout Health Loop", total_scout_health)
+                    num_of_units = math.ceil(total_scout_health / scout_health)
+        
+        #gamelib.debug_write("Total scout health", total_scout_health)
+        scouts_survived = max(num_of_units, 0)
+        #gamelib.debug_write("Scouts survived", scouts_survived)  
+        return scouts_survived
+
+    def build_scout_defense(self, game_state, game_map, turn_string):
+        enemy_edges = [[13, 27], [14, 27], [11, 25], [16, 25], [9, 23], 
+                       [18, 23], [8, 22], [19, 22], [6, 20], [21, 20], 
+                       [5, 19], [22, 19], [3, 17], [24, 17], [2, 16], 
+                       [25, 16], [0, 14], [27, 14]]
+        enemy_empty_edges = self.filter_blocked_locations(enemy_edges, game_state)
+        paths = self.least_damage_spawn_path(game_state, enemy_empty_edges)
+        end_location = paths[-1]
+        gamelib.debug_write("Predicted scored on", end_location)
+        sim_range = game_map.get_locations_in_range(end_location, 7)
+        n = 15
+        turret_health = 75
+        if len(sim_range) >= n:
+            random_turret_locations = random.sample(sim_range, n)
+        else:
+            # If there are fewer than n locations available, just use all of them
+            random_turret_locations = sim_range
+        #gamelib.debug_write("Sim Range", sim_range)
+        num_units = game_state.get_resource(MP, 1)
+        sim_survived = []
+        all_units = self.get_units_array(turn_string)
+        for i in sim_range:
+            all_units_temp = all_units
+            all_units_temp[tuple(i)] = [turret_health, "TURRET"]
+            num_survived = self.defense_scouts(game_state, game_map, num_units, all_units_temp, paths)
+            sim_survived.append(num_survived)
+        #gamelib.debug_write("Sim Survived", sim_survived)
+        return sim_range[sim_survived.index(min(sim_survived))]
+
+
     #need to increase length of priority_queue
-    global priority_queue
-    priority_queue = [[[5, 13], 'TURRET'], [[5, 13], 'UPGRADE'], [[14, 13], 'TURRET'], [[14, 13], 'UPGRADE'],
+    global intial_queue, priority_queue
+    intial_queue = [[[5, 13], 'TURRET'], [[5, 13], 'UPGRADE'], [[14, 13], 'TURRET'], [[14, 13], 'UPGRADE'],
                         [[23, 13], 'TURRET'], [[23, 13], 'UPGRADE'], [[4, 13], 'WALL'],
                         [[6, 13], 'WALL'], [[13, 13], 'WALL'], [[15, 13], 'WALL'], [[22, 13], 'WALL'],
-                        [[24, 13], 'WALL'], [[3, 13], 'TURRET'], [[25, 13], 'TURRET'], [[3, 13], 'UPGRADE'], 
+                        [[24, 13], 'WALL']]
+    priority_queue = [[[3, 13], 'TURRET'], [[25, 13], 'TURRET'], [[3, 13], 'UPGRADE'], 
                         [[25, 13], 'UPGRADE'], [[0, 13], 'WALL'], [[1, 13], 'WALL'],
                         [[2, 13], 'WALL'], [[25, 13], 'WALL'], [[26, 13], 'WALL'], [[27, 13], 'WALL'],
                         [[0, 13], 'UPGRADE'], [[13, 13], 'UPGRADE'], [[15, 13], 'UPGRADE'],
                         [[27, 13], 'UPGRADE']]
+    
+    
+    def build_support(self, game_state, edge, n):
+        if edge == 1: #top_left
+            support_list = [[5, 11], [8, 11], [11, 11]]
+            for i in range(n):
+                game_state.attempt_spawn(SUPPORT, support_list[i])
+        elif edge == 0: #top_right
+            support_list = [[16, 11], [19, 11], [22, 11]]
 
-    def build_defences(self, game_state):
+            for i in range(n):
+                game_state.attempt_spawn(SUPPORT, support_list[i])
+
+    def upgrade_support(self, game_state, edge, n):
+        if edge == 1: #top_left
+            support_list = [[5, 11], [8, 11], [11, 11]]
+            i = 0
+            while n > 0:
+                game_state.attempt_upgrade(support_list[i])
+                n -= 1
+                i += 1
+        elif edge == 0: #top_right
+            support_list = [[16, 11], [19, 11], [22, 11]]
+            i = 0
+            while n > 0:
+                game_state.attempt_upgrade(support_list[i])
+                n -= 1
+                i += 1
+
+    def build_defences(self, game_state, defence_list):
         """
         Build basic defenses using hardcoded locations.
         Remember to defend corners and avoid placing units in the front where enemy demolishers can attack them.
@@ -311,7 +394,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
         # More community tools available at: https://terminal.c1games.com/rules#Download
 
-        for i in priority_queue:
+        for i in defence_list:
             if i[1] == "WALL":
                 game_state.attempt_spawn(WALL, i[0])
             elif i[1] == "TURRET":
@@ -324,20 +407,6 @@ class AlgoStrategy(gamelib.AlgoCore):
         for i in priority_queue:
             if i[1] == "WALL":
                 game_state.attempt_upgrade(i[0])
-    
-    def build_support(self, game_state, edge):
-        if edge == 1: #top_left
-            game_state.attempt_spawn(SUPPORT, [8,11])
-            game_state.attempt_upgrade([8,11])
-            if game_state.get_resource(SP) > 12:
-                game_state.attempt_spawn(SUPPORT, [11,11])
-                game_state.attempt_upgrade([11,11])
-        elif edge == 0: #top_right
-            game_state.attempt_spawn(SUPPORT, [19,11])
-            game_state.attempt_upgrade([19,11])
-            if game_state.get_resource(SP) > 12:
-                game_state.attempt_spawn(SUPPORT, [16,11])
-                game_state.attempt_upgrade([16,11])
 
     def build_reactive_defense(self, game_state):
         """
@@ -394,9 +463,9 @@ class AlgoStrategy(gamelib.AlgoCore):
         damages = []
         # Get the damage estimate each path will take
         for location in location_options:
-            path = game_state.find_path_to_edge(location)
+            path = game_state.find_path_to_edge(location, game_state.get_target_edge(location))
             damage = 0
-            gamelib.debug_write("Path:", path)
+            #gamelib.debug_write("Path:", path)
             for path_location in path:
                 # Get number of enemy turrets that can attack each location and multiply by turret damage
                 damage += len(game_state.get_attackers(path_location, 0)) * gamelib.GameUnit(TURRET, game_state.config).damage_i
@@ -404,6 +473,29 @@ class AlgoStrategy(gamelib.AlgoCore):
         
         # Now just return the location that takes the least damage
         return location_options[damages.index(min(damages))]
+    
+    def least_damage_spawn_path(self, game_state, location_options):
+        """
+        This function will help us guess which location is the safest to spawn moving units from.
+        It gets the path the unit will take then checks locations on that path to 
+        estimate the path's damage risk.
+        """
+        damages = []
+        paths = {}
+        # Get the damage estimate each path will take
+        for location in location_options:
+            path = game_state.find_path_to_edge(location)
+            damage = 0
+            #gamelib.debug_write("Path:", path)
+            for path_location in path:
+                # Get number of enemy turrets that can attack each location and multiply by turret damage
+                damage += len(game_state.get_attackers(path_location, 0)) * gamelib.GameUnit(TURRET, game_state.config).damage_i
+            damages.append(damage)
+            paths[tuple(location)] = path
+        
+        # Now just return the location that takes the least damage
+        least_spawn = location_options[damages.index(min(damages))]
+        return paths[tuple(least_spawn)]
 
     def detect_enemy_unit(self, game_state, unit_type=None, valid_x = None, valid_y = None):
         total_units = 0
