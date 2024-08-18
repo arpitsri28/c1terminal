@@ -45,7 +45,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         MP = 1
         SP = 0
         ATTACK_STATUS = 0
-        START_ATTACK = 0
+        START_ATTACK = -1
         # This is a good place to do initial setup
         self.scored_on_locations = []
         self.enemy_defenses_stats = []
@@ -80,6 +80,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         If there are no stationary units to attack in the front, we will send Scouts to try and score quickly.
         """
         #START_ATTACK = 0
+        global START_ATTACK, ATTACK_STATUS
         if game_state.turn_number == 1:
             my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
             scouts_survived, def_dest_scout = self.scouts_survived(game_state, 8, turn_string, my_empty_edges)
@@ -304,9 +305,9 @@ class AlgoStrategy(gamelib.AlgoCore):
                 gamelib.debug_write("Current Attacker", attacker)
                 if attacker.unit_type == 'DF':
                     if attacker.upgrade:
-                        total_scout_health -= upgraded_turret_damage
+                        total_demolisher_health -= upgraded_turret_damage
                     else:
-                        total_scout_health -= normal_turret_damage
+                        total_demolisher_health -= normal_turret_damage
                     gamelib.debug_write("Demolisher Health Loop", total_demolisher_health)
                     num_of_units = math.ceil(total_demolisher_health / demolisher_health)
         
@@ -317,6 +318,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         return scouts_survived, num_of_defenses                              
 
     def freq(self, units_deployed, units_survived):
+        global START_ATTACK
         upper_survival_threshold = 0.7
         percentage_survived = units_survived/units_deployed
         if percentage_survived >= upper_survival_threshold:
