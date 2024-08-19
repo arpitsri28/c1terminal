@@ -106,23 +106,26 @@ class AlgoStrategy(gamelib.AlgoCore):
             self.build_reactive_defense(game_state)
             # Now build reactive defenses based on where the enemy scored
         elif ATTACK_STATUS == 1:
+            #support_locations = [[13, 4], [14, 4], [13, 5], [14, 5]]
             my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
             gamelib.debug_write("Deploy edges", my_empty_edges)
             path = self.least_damage_spawn_location(game_state, my_empty_edges)
             self.build_defences(game_state, intial_queue)
-            self.build_support(game_state, path)
+            #self.build_support(game_state, path)
+            game_state.attempt_spawn(SUPPORT, [13, 4])
             self.build_defences(game_state, priority_queue)
             # Now build reactive defenses based on where the enemy scored
             self.build_reactive_defense(game_state)
+
+            game_state.attempt_spawn(SUPPORT, [14, 4])
+            game_state.attempt_spawn(SUPPORT, [13, 5])
+            game_state.attempt_spawn(SUPPORT, [14, 5])
+            
             units_deployed, units_survived = self.attack(game_state, turn_string)
             gamelib.debug_write("Units Deployed Actual", units_deployed)
             gamelib.debug_write("Units Survived", units_survived)
-            START_ATTACK = self.freq(units_deployed, units_survived) 
+            START_ATTACK = self.freq(game_state, units_deployed, units_survived)
             
-        # support_locations = [[11, 9], [17, 9], [7, 9], [21, 9]]
-        # for i in support_locations:
-        #     game_state.attempt_spawn(SUPPORT, i)
-        #     game_state.attempt_upgrade(i)
         
     def get_safe_edges(self, game_state):
         my_edges = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
@@ -322,10 +325,14 @@ class AlgoStrategy(gamelib.AlgoCore):
         num_of_defenses = len(destroyed_defenses)
         return scouts_survived, num_of_defenses                              
 
-    def freq(self, units_deployed, units_survived):
+    def freq(self, game_state, units_deployed, units_survived):
         global START_ATTACK
-        upper_survival_threshold = 0.7
+        upper_survival_threshold = 0.8
         percentage_survived = units_survived/units_deployed
+        num_units = int(game_state.get_resource(MP))
+        enemy_health = game_state.enemy_health
+        if enemy_health <= num_units:
+            return START_ATTACK + 1
         if percentage_survived >= upper_survival_threshold:
             return START_ATTACK + 2
         else:
@@ -451,23 +458,30 @@ class AlgoStrategy(gamelib.AlgoCore):
 
     #need to increase length of priority_queue
     global intial_queue, priority_queue
-    support_locations = [[11, 9], [17, 9], [7, 9], [21, 9]]
-    intial_queue = [[[4, 12], 'TURRET'], [[4, 12], 'UPGRADE'], [[10, 12], 'TURRET'], [[10, 12], 'UPGRADE'],
-                        [[17, 12], 'TURRET'], [[17, 12], 'UPGRADE'], [[23, 12], 'TURRET'],
-                        [[23, 12], 'UPGRADE'], [[4, 13], 'WALL'], [[10, 13], 'WALL'], [[17, 13], 'WALL'],
-                        [[23, 13], 'WALL']]
-    priority_queue = [[[4, 13], 'UPGRADE'], [[10, 13], 'UPGRADE'], [[17, 13], 'UPGRADE'], 
-                        [[23, 13], 'UPGRADE'], [[9, 13], 'WALL'], [[18, 13], 'WALL'], 
-                        [[9, 12], 'TURRET'], [[18, 12], 'TURRET'], [[12, 4], 'SUPPORT'], [[16,4], 'SUPPORT'],
-                        [[3, 13], 'WALL'], [[3, 12], 'TURRET'], [[3, 12], 'UPGRADE'], [[24,12], 'TURRET'],
-                        [[24, 12], 'UPGRADE'], [[12, 4], 'UPGRADE'], [[16, 4], 'UPGRADE'],
-                        [[9,12], 'UPGRADE'], [[18,12], 'UPGRADE'], 
-                        [[11,12], 'TURRET'], [[16,12], 'TURRET'],
-                        [[11,12], 'UPGRADE'], [[16,12], 'UPGRADE'], [[5,12], 'TURRET'], [[22,12], 'TURRET'],
-                        [[13, 5], 'SUPPORT'], [[14, 5], 'SUPPORT'], [[13, 5], 'UPGRADE'], [[14, 5], 'UPGRADE'],
-                        [[0,13], 'WALL'], [[1,13], 'WALL'], 
-                        [[27,13], 'WALL'], [[26,13], 'WALL'],[[2,13], 'WALL'], [[25,13], 'WALL'],
-                        [[0,13], 'UPGRADE'], [[1,13], 'UPGRADE'], [[27,13], 'UPGRADE'], [[26,13], 'UPGRADE']]
+    
+    intial_queue = [[[3, 12], 'TURRET'], [[3, 12], 'UPGRADE'], [[4, 12], 'TURRET'],
+                        [[4, 12], 'UPGRADE'],
+                        [[10, 12], 'TURRET'], [[10, 12], 'UPGRADE'], [[17, 12], 'TURRET'], 
+                        [[17, 12], 'UPGRADE'],  [[23, 12], 'TURRET'], [[23, 12], 'UPGRADE'],
+                        ]
+    
+    priority_queue = [[[24, 12], 'TURRET'], [[24,12], 'UPGRADE'], [[3, 12], 'UPGRADE'], [[24, 12], 'UPGRADE'],  
+                        [[9, 12], 'TURRET'], [[18, 12], 'TURRET'],
+                        [[9, 12], 'UPGRADE'],  [[9, 12], 'UPGRADE'],
+                        [[5, 12], 'TURRET'], [[22, 12], 'TURRET'], 
+                        [[5,12], 'UPGRADE'], [[22,12], 'UPGRADE'],
+                        [[14, 4], 'SUPPORT'],
+                        [[11,12], 'TURRET'], [[16, 12], 'TURRET'],
+                        [[11,12], 'UPGRADE'], [[16, 12], 'UPGRADE'],
+                        [[13,5], 'SUPPORT'],
+                        [[14,5], 'SUPPORT']]
+    
+    '''
+    [[0,13], 'WALL'], [[1,13], 'WALL'], 
+    [[27,13], 'WALL'], [[26,13], 'WALL'],[[2,13], 'WALL'], [[25,13], 'WALL'],
+    [[0,13], 'UPGRADE'], [[1,13], 'UPGRADE'], [[27,13], 'UPGRADE'], [[26,13], 'UPGRADE']
+    '''
+                        
     
     global bottom_left_edge, bottom_right_edge, left_top, quad_1, quad_2, quad_3, quad_4 # quad_3 refers to bottom_right
     bottom_left_edge = {(7, 6), (0, 13), (2, 11), (6, 7), (4, 9), 
@@ -482,39 +496,46 @@ class AlgoStrategy(gamelib.AlgoCore):
     bottom_right_edge = {(15, 1), (20, 6), (24, 10), (14, 0), (27, 13), 
                             (25, 11), (22, 8), (21, 7), (18, 4), (26, 12), 
                             (19, 5), (17, 3), (23, 9), (16, 2)}
+    
     def build_support(self, game_state, spawn_location):
+        '''
         if spawn_location in quad_1:
             game_state.attempt_spawn(SUPPORT, [spawn_location[0] + 1, spawn_location[1] - 1])
-            game_state.attempt_upgrade([spawn_location[0] + 1, spawn_location[1] - 1])
+            if game_state.get_resource(SP) > 12:
+                game_state.attempt_upgrade([spawn_location[0] + 1, spawn_location[1] - 1])
             game_state.attempt_remove([spawn_location[0] + 1, spawn_location[1] - 1])
         elif spawn_location in quad_2:
             game_state.attempt_spawn(SUPPORT, [spawn_location[0] + 1, spawn_location[1]])
-            game_state.attempt_upgrade([spawn_location[0] + 1, spawn_location[1]])
+            if game_state.get_resource(SP) > 12:
+                game_state.attempt_upgrade([spawn_location[0] + 1, spawn_location[1]])
             game_state.attempt_remove([spawn_location[0] + 1, spawn_location[1]])
         elif spawn_location in quad_3:
             game_state.attempt_spawn(SUPPORT, [spawn_location[0] - 1, spawn_location[1]])
-            game_state.attempt_upgrade([spawn_location[0] - 1, spawn_location[1]])
+            if game_state.get_resource(SP) > 12:
+                game_state.attempt_upgrade([spawn_location[0] - 1, spawn_location[1]])
             game_state.attempt_remove([spawn_location[0] - 1, spawn_location[1]])
         elif spawn_location in quad_4:
             game_state.attempt_spawn(SUPPORT, [spawn_location[0] - 1, spawn_location[1] - 1])
-            game_state.attempt_upgrade([spawn_location[0] - 1, spawn_location[1] - 1])
+            if game_state.get_resource(SP) > 12:
+                game_state.attempt_upgrade([spawn_location[0] - 1, spawn_location[1] - 1])
             game_state.attempt_remove([spawn_location[0] - 1, spawn_location[1] - 1])
+        '''
+        return 0
+        
+        
 
 
 
     
     global my_edges
-    
+    '''
     my_edges = [[8, 5], [9, 4], [10, 3], 
                 [11, 2], [12, 1], [13, 0], [19, 5], [18, 4], [17, 3], 
                 [16, 2], [15, 1], [14, 0]]
     '''
-    my_edges = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
-                        [5, 8], [6, 7], [7, 6], [8, 5], [9, 4], [10, 3], 
-                        [11, 2], [12, 1], [13, 0], [27, 13], [26, 12], [25, 11], 
-                        [24, 10], [23, 9], [22, 8], [21, 7], [20, 6], [19, 5], 
-                        [18, 4], [17, 3], [16, 2], [15, 1], [14, 0]]
-    '''
+    
+    my_edges = [ [11, 2], [12, 1], [13, 0], [16, 2], [15, 1], [14, 0]]
+    
     def build_defences(self, game_state, defence_list):
         """
         Build basic defenses using hardcoded locations.
