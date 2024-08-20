@@ -83,49 +83,37 @@ class AlgoStrategy(gamelib.AlgoCore):
         If there are no stationary units to attack in the front, we will send Scouts to try and score quickly.
         """
         #START_ATTACK = 0
-        global START_ATTACK, ATTACK_STATUS
-        if game_state.turn_number == 1:
-            my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
-            scouts_survived, def_dest_scout = self.scouts_survived(game_state, 8, turn_string, my_empty_edges)
-            if scouts_survived >= 6:
-                START_ATTACK = 1
-            else:
-                START_ATTACK = 2
-        enemy_health = game_state.enemy_health
-        if game_state.turn_number == START_ATTACK:
+        if game_state.turn_number % 2 == 0 and game_state.turn_number > 0:
             ATTACK_STATUS = 1
         else:
             ATTACK_STATUS = 0
         
         if ATTACK_STATUS == 0: 
             # First, place basic defenses
-            self.build_defences(game_state, intial_queue)
+            self.build_defences(game_state, turn_string, intial_queue)
             
-            self.build_defences(game_state, priority_queue)
+            self.build_defences(game_state, turn_string, priority_queue)
 
             self.build_reactive_defense(game_state)
             # Now build reactive defenses based on where the enemy scored
         elif ATTACK_STATUS == 1:
-            #support_locations = [[13, 4], [14, 4], [13, 5], [14, 5]]
             my_empty_edges = self.filter_blocked_locations(my_edges, game_state)
             gamelib.debug_write("Deploy edges", my_empty_edges)
             path = self.least_damage_spawn_location(game_state, my_empty_edges)
-            self.build_defences(game_state, intial_queue)
-            #self.build_support(game_state, path)
-            game_state.attempt_spawn(SUPPORT, [13, 4])
-            self.build_defences(game_state, priority_queue)
+            self.build_support(game_state, path)
+            self.build_defences(game_state, turn_string, intial_queue)
+    
+            self.build_defences(game_state, turn_string, priority_queue)
             # Now build reactive defenses based on where the enemy scored
             self.build_reactive_defense(game_state)
-
-            game_state.attempt_spawn(SUPPORT, [14, 4])
-            game_state.attempt_spawn(SUPPORT, [13, 5])
-            game_state.attempt_spawn(SUPPORT, [14, 5])
-            
             units_deployed, units_survived = self.attack(game_state, turn_string)
-            gamelib.debug_write("Units Deployed Actual", units_deployed)
-            gamelib.debug_write("Units Survived", units_survived)
-            START_ATTACK = self.freq(game_state, units_deployed, units_survived)
+            # gamelib.debug_write("Units Deployed Actual", units_deployed)
+            # gamelib.debug_write("Units Survived", units_survived) 
             
+        # support_locations = [[11, 9], [17, 9], [7, 9], [21, 9]]
+        # for i in support_locations:
+        #     game_state.attempt_spawn(SUPPORT, i)
+        #     game_state.attempt_upgrade(i)
         
     def get_safe_edges(self, game_state):
         my_edges = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
@@ -178,6 +166,20 @@ class AlgoStrategy(gamelib.AlgoCore):
         #gamelib.debug_write("Units dict", units_with_type)
         return units_with_type
 
+    
+    def get_not_healthy(self, turn_string):
+        state = json.loads(turn_string)
+        units = state["p1Units"]
+        unit_information = self.config["unitInformation"]  # Access unit configuration
+        low_health_locations = []
+        for i, unit_list in enumerate(units):  # Each i corresponds to a specific unit type
+            unit_type = unit_information[i]["shorthand"]
+            for unit in unit_list:
+                x, y, health, unit_id = unit
+                #units_with_type.append([x, y, health, unit_id, unit_type])
+                if unit_type == 'DF' and health < 0.25 * 75 and health > 0:
+                    low_health_locations.append([x,y])
+        return low_health_locations
     
     def determine_scout_target(self, game_state, scout_location):
         """
@@ -325,14 +327,10 @@ class AlgoStrategy(gamelib.AlgoCore):
         num_of_defenses = len(destroyed_defenses)
         return scouts_survived, num_of_defenses                              
 
-    def freq(self, game_state, units_deployed, units_survived):
+    def freq(self, units_deployed, units_survived):
         global START_ATTACK
-        upper_survival_threshold = 0.8
+        upper_survival_threshold = 0.7
         percentage_survived = units_survived/units_deployed
-        num_units = int(game_state.get_resource(MP))
-        enemy_health = game_state.enemy_health
-        if enemy_health <= num_units:
-            return START_ATTACK + 1
         if percentage_survived >= upper_survival_threshold:
             return START_ATTACK + 2
         else:
@@ -458,23 +456,35 @@ class AlgoStrategy(gamelib.AlgoCore):
 
     #need to increase length of priority_queue
     global intial_queue, priority_queue
+    support_locations = [[11, 9], [17, 9], [7, 9], [21, 9]]
+    intial_queue = [[[4, 12], 'TURRET'], [[4, 12], 'UPGRADE'], [[10, 12], 'TURRET'],
+                    [[10, 12], 'UPGRADE'], [[17, 12], 'TURRET'], [[17, 12], 'UPGRADE'],
+                    [[23, 12], 'TURRET'], [[23, 12], 'UPGRADE'], 
+                    [[4, 13], 'WALL'], [[10, 13], 'WALL'], [[17, 13], 'WALL'], [[23, 13], 'WALL'],   
+                    [[4, 13], 'UPGRADE'], [[10, 13], 'UPGRADE'],]
+    priority_queue = [  [[11, 12], 'TURRET'],
+                        [[3, 12], 'TURRET'], 
+                        [[24,12], 'TURRET'],  
+                        [[11, 13], 'WALL'], [[18, 13], 'WALL'],
+                        [[17, 13], 'WALL'], [[10, 13], 'WALL'],
+                        [[11, 13], 'UPGRADE'], [[18, 13], 'UPGRADE'],
+                        [[18, 12], 'TURRET'], 
+                        [[3, 13], 'WALL'],  [[24, 13], 'WALL'],
+                        [[9, 13], 'WALL'], [[18, 13], 'WALL'], 
+                        [[23,11], 'TURRET'], 
+                        [[4,11], 'TURRET'], 
+                        [[3, 13], 'UPGRADE'], [[24, 13], 'UPGRADE'],
+                        [[9, 13], 'UPGRADE'], [[18, 13], 'UPGRADE'],
+                          
+                        
+                        [[5,13], 'WALL'], [[22,13], 'WALL'], [[11, 12], 'TURRET'], [[19, 12], 'TURRET'],
+                        # check here for suicide
+                        [[5,12], 'UPGRADE'], [[22,12], 'UPGRADE'], [[5,13], 'WALL'], [[22,13], 'WALL'],
+                        [[11,13], 'WALL'], [[19,13], 'WALL'],
+                        [[5, 13], 'UPGRADE'], [[22, 13], 'UPGRADE'],
+                        [[11, 13], 'UPGRADE'], [[19, 13], 'UPGRADE'],
+                        [[11, 12], 'UPGRADE'], [[19, 12], 'UPGRADE']]
     
-    intial_queue = [[[3, 12], 'TURRET'], [[3, 12], 'UPGRADE'], [[4, 12], 'TURRET'],
-                        [[4, 12], 'UPGRADE'],
-                        [[10, 12], 'TURRET'], [[10, 12], 'UPGRADE'], [[17, 12], 'TURRET'], 
-                        [[17, 12], 'UPGRADE'],  [[23, 12], 'TURRET'], [[23, 12], 'UPGRADE'],
-                        ]
-    
-    priority_queue = [[[24, 12], 'TURRET'], [[24,12], 'UPGRADE'], [[3, 12], 'UPGRADE'], [[24, 12], 'UPGRADE'],  
-                        [[9, 12], 'TURRET'], [[18, 12], 'TURRET'],
-                        [[9, 12], 'UPGRADE'],  [[9, 12], 'UPGRADE'],
-                        [[5, 12], 'TURRET'], [[22, 12], 'TURRET'], 
-                        [[5,12], 'UPGRADE'], [[22,12], 'UPGRADE'],
-                        [[14, 4], 'SUPPORT'],
-                        [[11,12], 'TURRET'], [[16, 12], 'TURRET'],
-                        [[11,12], 'UPGRADE'], [[16, 12], 'UPGRADE'],
-                        [[13,5], 'SUPPORT'],
-                        [[14,5], 'SUPPORT']]
     
     '''
     [[0,13], 'WALL'], [[1,13], 'WALL'], 
@@ -496,9 +506,7 @@ class AlgoStrategy(gamelib.AlgoCore):
     bottom_right_edge = {(15, 1), (20, 6), (24, 10), (14, 0), (27, 13), 
                             (25, 11), (22, 8), (21, 7), (18, 4), (26, 12), 
                             (19, 5), (17, 3), (23, 9), (16, 2)}
-    
     def build_support(self, game_state, spawn_location):
-        '''
         if spawn_location in quad_1:
             game_state.attempt_spawn(SUPPORT, [spawn_location[0] + 1, spawn_location[1] - 1])
             if game_state.get_resource(SP) > 12:
@@ -519,10 +527,6 @@ class AlgoStrategy(gamelib.AlgoCore):
             if game_state.get_resource(SP) > 12:
                 game_state.attempt_upgrade([spawn_location[0] - 1, spawn_location[1] - 1])
             game_state.attempt_remove([spawn_location[0] - 1, spawn_location[1] - 1])
-        '''
-        return 0
-        
-        
 
 
 
@@ -534,29 +538,54 @@ class AlgoStrategy(gamelib.AlgoCore):
                 [16, 2], [15, 1], [14, 0]]
     '''
     
-    my_edges = [ [11, 2], [12, 1], [13, 0], [16, 2], [15, 1], [14, 0]]
+    my_edges = [[0, 13], [1, 12], [2, 11], [3, 10], [4, 9], 
+                        [5, 8], [6, 7], [7, 6], [8, 5], [9, 4], [10, 3], 
+                        [11, 2], [12, 1], [13, 0], [27, 13], [26, 12], [25, 11], 
+                        [24, 10], [23, 9], [22, 8], [21, 7], [20, 6], [19, 5], 
+                        [18, 4], [17, 3], [16, 2], [15, 1], [14, 0]]
     
-    def build_defences(self, game_state, defence_list):
+    def build_defences(self, game_state, turn_string, defence_list):
         """
-        Build basic defenses using hardcoded locations.
-        Remember to defend corners and avoid placing units in the front where enemy demolishers can attack them.
+        Build basic defenses using hardcoded locations. Prioritize the construction and upgrade of turrets when there are enough structure points.
+        If there are not enough points to upgrade a newly built turret, prioritize upgrading existing walls only if it does not impede building and upgrading a turret.
         """
-        # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
-        # More community tools available at: https://terminal.c1games.com/rules#Download
 
-        for i in defence_list:
-            if i[1] == "WALL":
-                game_state.attempt_spawn(WALL, i[0])
-            elif i[1] == "TURRET":
-                game_state.attempt_spawn(TURRET, i[0])
-            elif i[1] == "SUPPORT":
-                game_state.attempt_spawn(SUPPORT, i[0])
-            elif i[1] == "UPGRADE":
-                game_state.attempt_upgrade(i[0])
-        
-        for i in priority_queue:
-            if i[1] == "WALL":
-                game_state.attempt_upgrade(i[0])
+        # Constants for costs
+        WALL_COST = 2
+        TURRET_COST = 3
+        UPGRADE_WALL_COST = 2
+        UPGRADE_TURRET_COST = 5
+
+        # First pass: Attempt to place and upgrade turrets
+        for item in defence_list:
+            location, unit_type = item[0], item[1]
+            current_sp = game_state.get_resource(SP)
+
+            if unit_type == "TURRET" and current_sp >= TURRET_COST + UPGRADE_TURRET_COST:
+                game_state.attempt_spawn(TURRET, location)
+                game_state.attempt_upgrade(location)
+
+        # Second pass: Handle walls and their upgrades
+        for item in defence_list:
+            location, unit_type = item[0], item[1]
+            current_sp = game_state.get_resource(SP)
+
+            if unit_type == "WALL" and current_sp >= WALL_COST:
+                game_state.attempt_spawn(WALL, location)
+                # Upgrade walls only if enough SP remains for another turret setup or other critical actions
+                if current_sp - WALL_COST >= UPGRADE_WALL_COST and (current_sp - WALL_COST - UPGRADE_WALL_COST) >= TURRET_COST + UPGRADE_TURRET_COST:
+                    game_state.attempt_upgrade(location)
+
+            elif unit_type == "SUPPORT" and current_sp >= TURRET_COST:  # Assuming SUPPORT costs the same as TURRET for simplicity
+                game_state.attempt_spawn(SUPPORT, location)
+
+        # Third pass: Upgrade existing structures if possible
+        for item in priority_queue:
+            location, action = item[0], item[1]
+            current_sp = game_state.get_resource(SP)
+
+            if action == "UPGRADE" and current_sp >= UPGRADE_WALL_COST:
+                game_state.attempt_upgrade(location)
 
     def build_reactive_defense(self, game_state):
         """
