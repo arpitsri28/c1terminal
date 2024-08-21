@@ -546,37 +546,22 @@ class AlgoStrategy(gamelib.AlgoCore):
     #need to increase length of priority_queue
     global intial_queue, priority_queue
     support_locations = [[11, 9], [17, 9], [7, 9], [21, 9]]
-    intial_queue = [[[4, 12], 'TURRET'], [[4, 12], 'UPGRADE'], [[23, 12], 'TURRET'],
-                        [[23, 12], 'UPGRADE'], [[4, 13], 'WALL'], [[23, 13], 'WALL'], 
+    intial_queue = [[[3, 12], 'TURRET'], [[3, 12], 'UPGRADE'], [[4, 12], 'TURRET'],
+                        [[4, 12], 'UPGRADE'],
                         [[10, 12], 'TURRET'], [[10, 12], 'UPGRADE'], [[17, 12], 'TURRET'], 
-                        [[17, 12], 'UPGRADE'],  [[10, 13], 'WALL'], [[17, 13], 'WALL'],
+                        [[17, 12], 'UPGRADE'],  [[23, 12], 'TURRET'], [[23, 12], 'UPGRADE'],
                         ]
     
-    priority_queue = [[[3, 12], 'TURRET'], [[24,12], 'TURRET'], [[3, 12], 'UPGRADE'], [[24, 12], 'UPGRADE'],
-                      [[4, 13], 'UPGRADE'], [[10, 13], 'UPGRADE'], 
-                      [[17, 13], 'UPGRADE'], [[23, 13], 'UPGRADE'],
-                      #[[14,4], 'SUPPORT'],  
+    priority_queue = [[[24, 12], 'TURRET'], [[24,12], 'UPGRADE'], [[3, 12], 'UPGRADE'], [[24, 12], 'UPGRADE'],  
                         [[9, 12], 'TURRET'], [[18, 12], 'TURRET'],
-                        [[3, 13], 'WALL'],  [[24, 13], 'WALL'],
-                        [[9, 13], 'WALL'], [[18, 13], 'WALL'],
-                        #[[1, 12], 'TURRET'], [[26, 12], 'TURRET'],
-                        [[11, 12], 'TURRET'], [[19, 12], 'TURRET'], 
-                        [[5,12], 'TURRET'], [[22,12], 'TURRET'],
-                        #[[1,12], 'UPGRADE'], [[26, 12], 'UPGRADE'],
-                        #[[13,5], 'SUPPORT'], 
-                        [[3, 13], 'UPGRADE'], [[24, 13], 'UPGRADE'],
-                        #[[0, 13], 'TURRET'], [[27, 13], 'TURRET'],
-                        [[9, 13], 'UPGRADE'], [[18, 13], 'UPGRADE'],
-                        [[9,12], 'UPGRADE'], [[18,12], 'UPGRADE'], 
-                        
-                        [[5,13], 'WALL'], [[22,13], 'WALL'],
-                        # check here for suicide
-                        [[5,12], 'UPGRADE'], [[22,12], 'UPGRADE'], [[5,13], 'WALL'], [[22,13], 'WALL'],
-                        [[11,13], 'WALL'], [[19,13], 'WALL'],
-                        #[[14,5], 'SUPPORT'],
-                        [[5, 13], 'UPGRADE'], [[22, 13], 'UPGRADE'],
-                        [[11, 13], 'UPGRADE'], [[19, 13], 'UPGRADE'],
-                        [[11, 12], 'UPGRADE'], [[19, 12], 'UPGRADE']]
+                        [[9, 12], 'UPGRADE'],  [[9, 12], 'UPGRADE'],
+                        [[5, 12], 'TURRET'], [[22, 12], 'TURRET'], 
+                        [[5,12], 'UPGRADE'], [[22,12], 'UPGRADE'],
+                        #[[14, 4], 'SUPPORT'],
+                        [[11,12], 'TURRET'], [[16, 12], 'TURRET'],
+                        [[11,12], 'UPGRADE'], [[16, 12], 'UPGRADE']]
+                        #[[13,5], 'SUPPORT'],
+                        #[[14,5], 'SUPPORT']]
     
     '''
     [[0,13], 'WALL'], [[1,13], 'WALL'], 
